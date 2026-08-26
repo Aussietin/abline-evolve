@@ -236,10 +236,10 @@ function renderLoop(): void {
 
 function draw(): void {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  renderTrack(ctx, track);
+  renderTrack(ctx, track, canvas.width, canvas.height);
   renderPopulation(ctx, population, physics);
-  drawFitnessSparkline(ctx, canvas.width - 210, 10, 200, 60, population.fitnessHistory);
-  drawWeightHeatmap(ctx, canvas.width - 210, 90, 100, 100, population.bestEverGenome);
+  drawFitnessSparkline(ctx, canvas.width - 216, 10, 206, 68, population.fitnessHistory);
+  drawWeightHeatmap(ctx, canvas.width - 216, 96, 106, 106, population.bestEverGenome);
 }
 
 function showOfflineOverlay(show: boolean): void {

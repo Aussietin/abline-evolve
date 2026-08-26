@@ -23,7 +23,7 @@ export function loadGame(): SaveData | null {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as SaveData;
-    if (parsed.version !== 1) return null; // unknown/future save shape — start fresh rather than guess
+    if (parsed.version !== 2) return null; // unknown/old/future save shape — start fresh rather than guess or migrate
     return parsed;
   } catch (err) {
     console.warn("abline-evolve: save data corrupted, starting fresh", err);

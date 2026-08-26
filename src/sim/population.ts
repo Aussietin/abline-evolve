@@ -1,8 +1,9 @@
-import type { Genome, NeuralNetConfig, Vehicle, VehiclePhysicsConfig } from "./types";
+import type { Genome, NeuralNetConfig, Obstacle, Vehicle, VehiclePhysicsConfig } from "./types";
 import type { Track } from "./track";
 import { randomGenome, mutate, cloneGenome } from "./genome";
 import { weightCount } from "./neuralnet";
 import { spawnVehicle, stepVehicle } from "./vehicle";
+import { generateObstacles, nextObstacleGenId } from "./obstacles";
 
 export interface PopulationConfig {
   size: number;
@@ -19,6 +20,8 @@ export interface Population {
   bestEverFitness: number;
   currentBestIndex: number;
   fitnessHistory: number[]; // best fitness per completed generation
+  obstacles: Obstacle[]; // this generation's procedurally placed stumps/bog holes/washouts
+  obstacleGenId: number; // bumps every time `obstacles` is (re)generated — render.ts cache key
 }
 
 export function createPopulation(
@@ -39,6 +42,8 @@ export function createPopulation(
     bestEverFitness: 0,
     currentBestIndex: 0,
     fitnessHistory: [],
+    obstacles: generateObstacles(track),
+    obstacleGenId: nextObstacleGenId(),
   };
 }
 
@@ -52,7 +57,7 @@ export function stepPopulation(
 ): void {
   let anyAlive = false;
   for (const v of pop.vehicles) {
-    stepVehicle(v, track, physics, netCfg, dt);
+    stepVehicle(v, track, pop.obstacles, physics, netCfg, dt);
     if (v.alive) anyAlive = true;
   }
   pop.genSeconds += dt;
@@ -92,4 +97,8 @@ function endGeneration(pop: Population, track: Track, popCfg: PopulationConfig, 
   pop.generation += 1;
   pop.genSeconds = 0;
   pop.currentBestIndex = 0;
+  // Fresh hazard layout every generation — the net has to react to sensor
+  // input in the moment, never memorize a fixed obstacle arrangement.
+  pop.obstacles = generateObstacles(track);
+  pop.obstacleGenId = nextObstacleGenId();
 }

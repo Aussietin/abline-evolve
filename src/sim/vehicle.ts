@@ -1,8 +1,9 @@
-import type { Vehicle, VehiclePhysicsConfig, Genome, NeuralNetConfig } from "./types";
+import type { Vehicle, VehiclePhysicsConfig, Genome, NeuralNetConfig, Obstacle } from "./types";
 import type { Track } from "./track";
-import { castSensors } from "./sensors";
+import { castSensors, castObstacleSensors } from "./sensors";
 import { forward } from "./neuralnet";
-import { distanceToNearestWall, mudSpeedMultiplierAt, projectArcLength } from "./track";
+import { distanceToNearestWall, projectArcLength } from "./track";
+import { hardObstacleHit, obstacleSpeedMultiplierAt } from "./obstacles";
 
 export function spawnVehicle(track: Track, genome: Genome): Vehicle {
   return {
@@ -21,13 +22,18 @@ export function spawnVehicle(track: Track, genome: Genome): Vehicle {
 export function stepVehicle(
   vehicle: Vehicle,
   track: Track,
+  obstacles: Obstacle[],
   physics: VehiclePhysicsConfig,
   netCfg: NeuralNetConfig,
   dt: number
 ): void {
   if (!vehicle.alive) return;
 
-  vehicle.sensors = castSensors(
+  // Two independent sensor fans, same ray geometry: wallSensors reports how
+  // far off the guidance corridor each ray reaches, obstacleSensors reports
+  // the nearest stump/bog/washout along that same ray — so the net can tell
+  // "drifting off the AB line" apart from "hazard dead ahead, swerve."
+  const wallSensors = castSensors(
     vehicle,
     vehicle.heading,
     physics.sensorCount,
@@ -35,12 +41,21 @@ export function stepVehicle(
     physics.sensorRange,
     track.walls
   );
+  const obstacleSensors = castObstacleSensors(
+    vehicle,
+    vehicle.heading,
+    physics.sensorCount,
+    physics.sensorFanDegrees,
+    physics.sensorRange,
+    obstacles
+  );
+  vehicle.sensors = [...wallSensors, ...obstacleSensors];
 
   const inputs = [...vehicle.sensors, vehicle.speed / physics.maxSpeed];
   const [steer, throttle] = forward(netCfg, vehicle.genome, inputs);
 
-  const mudMult = mudSpeedMultiplierAt(track, vehicle);
-  const effectiveMaxSpeed = physics.maxSpeed * mudMult;
+  const speedMult = obstacleSpeedMultiplierAt(obstacles, vehicle);
+  const effectiveMaxSpeed = physics.maxSpeed * speedMult;
 
   vehicle.speed += throttle * physics.maxAccel * dt;
   vehicle.speed = Math.max(0, Math.min(effectiveMaxSpeed, vehicle.speed));
@@ -55,10 +70,13 @@ export function stepVehicle(
   const arc = projectArcLength(track, vehicle);
   if (arc > vehicle.arcProgress) vehicle.arcProgress = arc;
 
-  if (distanceToNearestWall(track, vehicle) < physics.radius) {
+  // Stumps and washouts are hard hazards — same generation-ending collision
+  // as running off the corridor. Bog holes are soft (handled above via the
+  // speed multiplier only) and never end the generation.
+  if (distanceToNearestWall(track, vehicle) < physics.radius || hardObstacleHit(obstacles, vehicle, physics.radius)) {
     vehicle.alive = false;
   }
   if (vehicle.arcProgress >= track.totalLength - 1) {
-    vehicle.alive = false; // reached the end of the row — stop simulating it
+    vehicle.alive = false; // reached the end of the last row — stop simulating it
   }
 }

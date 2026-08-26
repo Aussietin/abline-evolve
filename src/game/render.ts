@@ -1,7 +1,8 @@
 import type { Track } from "../sim/track";
 import type { Population } from "../sim/population";
 import type { VehiclePhysicsConfig } from "../sim/types";
-import type { Point } from "../sim/types";
+import type { Obstacle, Point } from "../sim/types";
+import { washoutEdges } from "../sim/types";
 import { drawTractor } from "./sprites";
 
 // Everything in this module is static per track (field texture, guidance
@@ -30,10 +31,143 @@ function buildStaticLayer(track: Track, width: number, height: number): HTMLCanv
   drawField(ctx, width, height);
   drawGuidanceCorridor(ctx, track);
   drawHeadlandGates(ctx, track);
-  drawMud(ctx, track);
   drawAbLine(ctx, track);
 
   return layer;
+}
+
+// Obstacles are dynamic per-generation (see sim/obstacles.ts) so they can't
+// live in the static field layer above — they get their own baked layer,
+// rebuilt only when obstacleGenId changes (i.e. once per generation), not
+// every frame. Composited between the static field and the tractors.
+let obstacleLayer: HTMLCanvasElement | null = null;
+let obstacleLayerKey = "";
+
+export function renderObstacles(
+  ctx: CanvasRenderingContext2D,
+  obstacles: Obstacle[],
+  obstacleGenId: number,
+  width: number,
+  height: number
+): void {
+  const key = `${obstacleGenId}:${width}x${height}`;
+  if (!obstacleLayer || obstacleLayerKey !== key) {
+    obstacleLayer = buildObstacleLayer(obstacles, width, height);
+    obstacleLayerKey = key;
+  }
+  ctx.drawImage(obstacleLayer, 0, 0);
+}
+
+function buildObstacleLayer(obstacles: Obstacle[], width: number, height: number): HTMLCanvasElement {
+  const layer = document.createElement("canvas");
+  layer.width = width;
+  layer.height = height;
+  const ctx = layer.getContext("2d")!;
+  for (const o of obstacles) {
+    switch (o.kind) {
+      case "stump":
+        drawStump(ctx, o.x, o.y, o.radius);
+        break;
+      case "bog":
+        drawBog(ctx, o.x, o.y, o.radius);
+        break;
+      case "washout":
+        drawWashout(ctx, o);
+        break;
+    }
+  }
+  return layer;
+}
+
+// Tree stump: solid, readable hazard — concentric rings (cut trunk) with a
+// dark collision rim, distinct from the soft translucent bog look.
+function drawStump(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number): void {
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+  ctx.shadowBlur = 4;
+  const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+  grad.addColorStop(0, "#a9744a");
+  grad.addColorStop(0.7, "#7a5030");
+  grad.addColorStop(1, "#4a301c");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.strokeStyle = "rgba(60, 38, 20, 0.6)";
+  ctx.lineWidth = 1;
+  for (let r = radius * 0.3; r < radius; r += radius * 0.28) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(217, 90, 70, 0.55)"; // faint hazard rim
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, radius + 2, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+// Bog hole: reuses the old mud-patch look (soft radial wash, no hard rim) —
+// same non-lethal traction hazard, just relocated into the dynamic layer.
+function drawBog(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number): void {
+  const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+  grad.addColorStop(0, "rgba(70, 45, 15, 0.6)");
+  grad.addColorStop(1, "rgba(70, 45, 15, 0)");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(90, 200, 220, 0.25)"; // faint sheen, wet ground
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(x, y, radius * 0.6, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+// Washout: an elongated dark gouge cutting across the row — wider/harder
+// edged than a stump so it reads as "ground gone," not just an obstacle.
+function drawWashout(ctx: CanvasRenderingContext2D, w: Extract<Obstacle, { kind: "washout" }>): void {
+  const edges = washoutEdges(w);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(edges[0].a.x, edges[0].a.y);
+  for (const e of edges) ctx.lineTo(e.b.x, e.b.y);
+  ctx.closePath();
+
+  const grad = ctx.createLinearGradient(w.a.x, w.a.y, w.b.x, w.b.y);
+  grad.addColorStop(0, "rgba(35, 24, 14, 0.9)");
+  grad.addColorStop(0.5, "rgba(20, 14, 8, 0.95)");
+  grad.addColorStop(1, "rgba(35, 24, 14, 0.9)");
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(217, 90, 70, 0.5)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+
+  // Jagged erosion streaks along the length for texture.
+  ctx.strokeStyle = "rgba(90, 60, 35, 0.5)";
+  ctx.lineWidth = 1;
+  const dx = w.b.x - w.a.x;
+  const dy = w.b.y - w.a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+  const steps = Math.max(2, Math.round(len / 14));
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const cx = w.a.x + dx * t;
+    const cy = w.a.y + dy * t;
+    const jitter = (Math.random() - 0.5) * w.halfWidth * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(cx - nx * w.halfWidth * 0.7 + nx * jitter, cy - ny * w.halfWidth * 0.7 + ny * jitter);
+    ctx.lineTo(cx + nx * w.halfWidth * 0.7 + nx * jitter, cy + ny * w.halfWidth * 0.7 + ny * jitter);
+    ctx.stroke();
+  }
 }
 
 // Paddock ground: a soft gradient plus fine furrow striping so it reads as
@@ -168,18 +302,6 @@ function drawHeadlandGates(ctx: CanvasRenderingContext2D, track: Track): void {
     ctx.stroke();
   }
   ctx.setLineDash([]);
-}
-
-function drawMud(ctx: CanvasRenderingContext2D, track: Track): void {
-  for (const patch of track.mud) {
-    const grad = ctx.createRadialGradient(patch.x, patch.y, 0, patch.x, patch.y, patch.radius);
-    grad.addColorStop(0, "rgba(70, 45, 15, 0.6)");
-    grad.addColorStop(1, "rgba(70, 45, 15, 0)");
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(patch.x, patch.y, patch.radius, 0, Math.PI * 2);
-    ctx.fill();
-  }
 }
 
 // The actual AB guidance line: a bright glowing dashed line, visually

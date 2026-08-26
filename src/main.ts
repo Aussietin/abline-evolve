@@ -1,8 +1,9 @@
 import type { NeuralNetConfig, VehiclePhysicsConfig } from "./sim/types";
-import { paddockTrack01 } from "./content/tracks";
+import { paddockField01 } from "./content/tracks";
 import { createPopulation, stepPopulation, type Population, type PopulationConfig } from "./sim/population";
 import { cloneGenome } from "./sim/genome";
-import { renderTrack, renderPopulation } from "./game/render";
+import { rowIndexAtArc } from "./sim/track";
+import { renderTrack, renderPopulation, renderObstacles } from "./game/render";
 import { drawFitnessSparkline, drawWeightHeatmap } from "./ui/transparency";
 import {
   createMetaState,
@@ -33,7 +34,7 @@ import { saveGame, loadGame } from "./game/save";
 import { runOfflineReplay } from "./game/offlineProgress";
 import { buildShopPanel, refreshShopPanel } from "./ui/shop";
 
-const track = paddockTrack01();
+const track = paddockField01();
 
 // Tractor, not a car: slower top speed, wide sensor fan, sluggish turning at
 // low speed (handled in vehicle.ts) — the whole point of the theme swap.
@@ -47,8 +48,12 @@ const basePhysics: VehiclePhysicsConfig = {
   sensorFanDegrees: 160,
 };
 
+// v3: two independent sensor channels per ray (corridor wall + nearest
+// obstacle — see vehicle.ts/sensors.ts), so inputSize is sensorCount*2 + 1
+// (speed) rather than sensorCount + 1. Hidden-layer topology is unchanged
+// from v2 — hiddenSize2 stays upgrade-gated (see upgrades.ts), not a default.
 const baseNetCfg: NeuralNetConfig = {
-  inputSize: basePhysics.sensorCount + 1,
+  inputSize: basePhysics.sensorCount * 2 + 1,
   hiddenSize: 8,
   outputSize: 2,
 };
@@ -100,6 +105,7 @@ let lastSimTime = performance.now();
 function buildHud(): void {
   hud.innerHTML = `
     <span id="gen-label">Generation 1</span>
+    <span id="row-label">Row 1/${track.rowCount}</span>
     <span id="fitness-label">Best: 0</span>
     <span id="currency-label">Credits: 0</span>
     <button id="speed-1x" class="active">1x</button>
@@ -223,6 +229,9 @@ function simTick(): void {
 
 function updateHud(): void {
   document.getElementById("gen-label")!.textContent = `Generation ${population.generation}`;
+  const champion = population.vehicles[population.currentBestIndex];
+  const currentRow = champion ? rowIndexAtArc(track, champion.arcProgress) : 1;
+  document.getElementById("row-label")!.textContent = `Row ${currentRow}/${track.rowCount}`;
   document.getElementById("fitness-label")!.textContent =
     `Best: ${Math.round(population.bestEverFitness)} / ${Math.round(track.totalLength)}`;
   document.getElementById("currency-label")!.textContent =
@@ -237,6 +246,7 @@ function renderLoop(): void {
 function draw(): void {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   renderTrack(ctx, track, canvas.width, canvas.height);
+  renderObstacles(ctx, population.obstacles, population.obstacleGenId, canvas.width, canvas.height);
   renderPopulation(ctx, population, physics);
   drawFitnessSparkline(ctx, canvas.width - 216, 10, 206, 68, population.fitnessHistory);
   drawWeightHeatmap(ctx, canvas.width - 216, 96, 106, 106, population.bestEverGenome);

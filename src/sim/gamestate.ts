@@ -2,6 +2,7 @@ import type { Genome } from "./types";
 import type { Track } from "./track";
 import type { Population } from "./population";
 import { spawnVehicle } from "./vehicle";
+import { generateObstacles, nextObstacleGenId } from "./obstacles";
 import { createEconomyState, type EconomyState } from "./economy";
 import { createUpgradeLevels, type UpgradeLevels } from "./upgrades";
 import { createPermanentUpgrades, type PermanentUpgradeLevels } from "./prestige";
@@ -37,8 +38,13 @@ export function computeOfflineSeconds(nowMs: number, savedAtMs: number, capSecon
 
 // --- Save data: plain-JSON shape, pure transforms only (no localStorage) --
 
+// v3 bumped this to 2: NeuralNetConfig.inputSize grew (new obstacle sensor
+// channel, see sensors.ts/vehicle.ts), so any pre-v3 genome is the wrong
+// length for the current net and can't be reinterpreted. Simple fix per the
+// brief: version-mismatch saves are treated as "no save" (see save.ts) and
+// the run starts fresh rather than attempting genome migration.
 export interface SaveData {
-  version: 1;
+  version: 2;
   savedAt: number; // epoch ms
   meta: MetaState;
   population: {
@@ -52,7 +58,7 @@ export interface SaveData {
 
 export function toSaveData(meta: MetaState, pop: Population, nowMs: number): SaveData {
   return {
-    version: 1,
+    version: 2,
     savedAt: nowMs,
     meta: {
       economy: { ...meta.economy },
@@ -96,5 +102,10 @@ export function populationFromSaveData(track: Track, saved: SaveData["population
     bestEverFitness: saved.bestEverFitness,
     currentBestIndex: 0,
     fitnessHistory: [...saved.fitnessHistory],
+    // Obstacles are intentionally NOT persisted (they're meant to be fresh
+    // every generation, never memorized/replayed) — a reload just rolls a
+    // new layout for whatever generation was saved.
+    obstacles: generateObstacles(track),
+    obstacleGenId: nextObstacleGenId(),
   };
 }

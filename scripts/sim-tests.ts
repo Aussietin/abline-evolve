@@ -8,11 +8,21 @@
 // prestige/save-load round-trip/offline-replay. Exits non-zero on failure so
 // it's usable in a pre-commit hook or CI later if wanted.
 
-import { paddockTrack01 } from "../src/content/tracks.ts";
+import { paddockField01 } from "../src/content/tracks.ts";
 import { createPopulation, stepPopulation, type PopulationConfig } from "../src/sim/population.ts";
 import type { NeuralNetConfig, VehiclePhysicsConfig } from "../src/sim/types.ts";
 import { weightCount, forward } from "../src/sim/neuralnet.ts";
 import { randomGenome } from "../src/sim/genome.ts";
+import { spawnVehicle, stepVehicle } from "../src/sim/vehicle.ts";
+import { castObstacleSensors } from "../src/sim/sensors.ts";
+import {
+  generateObstacles,
+  hardObstacleHit,
+  obstacleSpeedMultiplierAt,
+  nextObstacleGenId,
+  DEFAULT_OBSTACLE_CONFIG,
+} from "../src/sim/obstacles.ts";
+import { buildBoustrophedonField, rowIndexAtArc } from "../src/sim/track.ts";
 import {
   createEconomyState,
   generationReward,
@@ -62,7 +72,7 @@ function approxEqual(a: number, b: number, eps = 1e-6): boolean {
   return Math.abs(a - b) <= eps;
 }
 
-const track = paddockTrack01();
+const track = paddockField01();
 const physics: VehiclePhysicsConfig = {
   maxSpeed: 90,
   maxAccel: 60,
@@ -72,7 +82,8 @@ const physics: VehiclePhysicsConfig = {
   sensorRange: 140,
   sensorFanDegrees: 160,
 };
-const netCfg: NeuralNetConfig = { inputSize: physics.sensorCount + 1, hiddenSize: 8, outputSize: 2 };
+// v3: two sensor channels per ray (wall + obstacle) — see sensors.ts/vehicle.ts.
+const netCfg: NeuralNetConfig = { inputSize: physics.sensorCount * 2 + 1, hiddenSize: 8, outputSize: 2 };
 const popCfg: PopulationConfig = { size: 24, mutationRate: 0.2, mutationMagnitude: 0.4, maxGenerationSeconds: 12 };
 
 // --- neuralnet: second hidden layer stays backward-compatible ---------------
@@ -217,7 +228,7 @@ const popCfg: PopulationConfig = { size: 24, mutationRate: 0.2, mutationMagnitud
   meta.upgrades.sensorRange = 2;
 
   const saveData = toSaveData(meta, pop, Date.now());
-  assert(saveData.version === 1, "save data is versioned");
+  assert(saveData.version === 2, "save data is versioned (bumped to 2 in v3 for the new obstacle sensor inputs)");
   assert(saveData.population.genomes.length === pop.vehicles.length, "save data captures every vehicle's genome");
 
   const restoredMeta = metaFromSaveData(saveData);
@@ -250,6 +261,114 @@ const popCfg: PopulationConfig = { size: 24, mutationRate: 0.2, mutationMagnitud
   const result = advanceHeadless(pop, track, physics, netCfg, popCfg, econ, 1, levels, popCfg.mutationMagnitude, 0, 20);
   assert(approxEqual(result.secondsSimulated, 20, 1e-3), "advanceHeadless simulates the requested duration");
   assert(pop.generation >= 1, "advanceHeadless actually advances the population");
+}
+
+// --- v3: multi-row field geometry ------------------------------------------
+{
+  const field = buildBoustrophedonField(
+    { rowCount: 4, rowLength: 650, rowSpacing: 90, startX: 80, startY: 120, turnSegments: 12 },
+    70
+  );
+  assert(field.rowCount === 4, "boustrophedon field reports the configured row count");
+  assert(field.rowEndDistances.length === 4, "one rowEndDistances entry per row");
+  for (let i = 1; i < field.rowEndDistances.length; i++) {
+    assert(field.rowEndDistances[i] > field.rowEndDistances[i - 1], "row end distances are strictly increasing");
+  }
+  assert(
+    field.rowEndDistances[field.rowEndDistances.length - 1] === field.totalLength,
+    "the last row's end distance equals the field's total length"
+  );
+  assert(field.totalLength > 4 * 650, "total length includes the headland turns, not just the four straight rows");
+
+  assert(rowIndexAtArc(field, 0) === 1, "arc length 0 is in row 1");
+  assert(
+    rowIndexAtArc(field, field.totalLength) === field.rowCount,
+    "arc length at the very end is in the last row"
+  );
+  assert(
+    rowIndexAtArc(field, field.rowEndDistances[0] + 1) === 2,
+    "arc length just past row 1's end reports row 2"
+  );
+
+  // A single-row buildTrack (no field config) still reports sane defaults —
+  // multi-row support didn't regress the plain single-line case.
+  const single = buildBoustrophedonField({ rowCount: 1, rowLength: 400, rowSpacing: 90, startX: 0, startY: 0 }, 70);
+  assert(single.rowCount === 1 && single.rowEndDistances.length === 1, "a 1-row field behaves like a plain single line");
+}
+
+// --- v3: obstacle sensor casting -------------------------------------------
+{
+  const origin = { x: 0, y: 0 };
+  const heading = 0; // facing +x
+
+  const clear = castObstacleSensors(origin, heading, 5, 160, 100, []);
+  assert(clear.every((r) => r === 1), "no obstacles means every obstacle-sensor ray reads fully clear (1.0)");
+
+  const stumpAhead = castObstacleSensors(origin, heading, 5, 160, 100, [{ kind: "stump", x: 50, y: 0, radius: 10 }]);
+  const centerIdx = 2; // middle ray of 5, pointing straight along heading
+  assert(stumpAhead[centerIdx] < 1, "a stump directly ahead shortens the center obstacle-sensor ray");
+  assert(approxEqual(stumpAhead[centerIdx], 0.4, 0.02), "the shortened reading matches distance-to-stump-edge / range");
+  assert(stumpAhead[0] === 1, "a ray far off to the side of a small stump stays clear");
+
+  const washoutAcross = castObstacleSensors(origin, heading, 5, 160, 100, [
+    { kind: "washout", a: { x: 50, y: -40 }, b: { x: 50, y: 40 }, halfWidth: 8 },
+  ]);
+  assert(washoutAcross[centerIdx] < 1, "a washout crossing straight ahead is detected by the obstacle sensor");
+
+  const bogAhead = castObstacleSensors(origin, heading, 5, 160, 100, [{ kind: "bog", x: 50, y: 0, radius: 10 }]);
+  assert(bogAhead[centerIdx] < 1, "bog holes are sensed too, even though they're a soft (non-collision) hazard");
+}
+
+// --- v3: obstacle hazard behavior ------------------------------------------
+{
+  const stump = { kind: "stump" as const, x: 100, y: 100, radius: 10 };
+  assert(hardObstacleHit([stump], { x: 105, y: 100 }, 9), "a point inside a stump's radius+vehicle-radius is a hard hit");
+  assert(!hardObstacleHit([stump], { x: 200, y: 200 }, 9), "a point far from any obstacle is not a hard hit");
+
+  const washout = { kind: "washout" as const, a: { x: 0, y: 0 }, b: { x: 100, y: 0 }, halfWidth: 10 };
+  assert(hardObstacleHit([washout], { x: 50, y: 0 }, 9), "a point on a washout's centerline is a hard hit");
+  assert(!hardObstacleHit([washout], { x: 50, y: 100 }, 9), "a point far off a washout's line is not a hard hit");
+
+  const bog = { kind: "bog" as const, x: 0, y: 0, radius: 20 };
+  assert(!hardObstacleHit([bog], { x: 0, y: 0 }, 9), "bog holes never register as a hard hit — soft hazard only");
+  assert(obstacleSpeedMultiplierAt([bog], { x: 0, y: 0 }) < 1, "standing inside a bog hole slows the effective max speed");
+  assert(obstacleSpeedMultiplierAt([bog], { x: 500, y: 500 }) === 1, "outside any bog hole, speed is unaffected");
+
+  const generated = generateObstacles(track);
+  const [minStumps, maxStumps] = DEFAULT_OBSTACLE_CONFIG.stumpCount;
+  const [minBogs, maxBogs] = DEFAULT_OBSTACLE_CONFIG.bogCount;
+  const stumps = generated.filter((o) => o.kind === "stump");
+  const bogs = generated.filter((o) => o.kind === "bog");
+  assert(stumps.length >= minStumps && stumps.length <= maxStumps, "generated stump count stays within configured range");
+  assert(bogs.length >= minBogs && bogs.length <= maxBogs, "generated bog count stays within configured range");
+  for (const o of generated) {
+    if (o.kind === "stump" || o.kind === "bog") {
+      assert(o.radius < track.width / 2, "no generated circular obstacle is wide enough to fully block the corridor");
+    } else {
+      assert(o.halfWidth < track.width / 2, "no generated washout is wide enough to fully block the corridor");
+    }
+  }
+
+  const id1 = nextObstacleGenId();
+  const id2 = nextObstacleGenId();
+  assert(id2 > id1, "obstacle generation ids are monotonically increasing (used as the render cache key)");
+}
+
+// --- v3: a hard obstacle actually ends a vehicle's generation --------------
+{
+  const genome = randomGenome(weightCount(netCfg));
+  const v = spawnVehicle(track, genome);
+  // Drop a stump exactly on the vehicle's own spawn point so the very first
+  // step's collision check trips regardless of what the (random) genome
+  // outputs for steer/throttle — proves the hard-hazard path in vehicle.ts
+  // actually ends the generation, consistent with the existing wall-hit path.
+  const stumpOnSpawn = [{ kind: "stump" as const, x: v.x, y: v.y, radius: physics.radius + 5 }];
+  stepVehicle(v, track, stumpOnSpawn, physics, netCfg, 1 / 60);
+  assert(!v.alive, "driving into a stump ends the vehicle's generation, same as a corridor-wall collision");
+
+  const v2 = spawnVehicle(track, genome);
+  stepVehicle(v2, track, [], physics, netCfg, 1 / 60);
+  assert(v2.alive, "with no obstacles present, the same first step leaves the vehicle alive");
 }
 
 console.log(`\n${passed} passed, ${failures} failed`);

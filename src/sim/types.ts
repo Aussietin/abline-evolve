@@ -38,4 +38,6 @@ export interface NeuralNetConfig {
   inputSize: number; // sensorCount + 1 (speed)
   hiddenSize: number;
   outputSize: number; // 2: steer, throttle
+  hiddenSize2?: number; // optional second hidden layer — the "Neural Expansion" upgrade.
+  // Omitted/undefined preserves the original single-hidden-layer MVP topology exactly.
 }

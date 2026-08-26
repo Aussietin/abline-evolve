@@ -39,3 +39,114 @@ html, body {
 #hud button.active {
   background: #7a9a5a;
 }
+
+#currency-label {
+  color: #d8c878;
+}
+
+.shop-panel {
+  display: none;
+  width: 100%;
+  max-width: 900px;
+  margin-top: 10px;
+  background: #23261c;
+  border: 1px solid #5a5a4a;
+  border-radius: 4px;
+  padding: 12px 16px;
+  box-sizing: border-box;
+}
+
+.shop-panel.open {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.shop-section {
+  flex: 1;
+  min-width: 260px;
+}
+
+.shop-section h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: #c9c07a;
+}
+
+.shop-hint {
+  font-weight: normal;
+  font-size: 11px;
+  color: #8a8a6a;
+}
+
+.shop-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid #3a3a2e;
+  font-size: 12px;
+}
+
+.shop-row-info strong {
+  font-size: 13px;
+}
+
+.shop-level {
+  color: #8a9a6a;
+  font-size: 11px;
+}
+
+.shop-desc {
+  color: #a8a488;
+  font-size: 11px;
+  max-width: 320px;
+}
+
+.shop-buy {
+  background: #4a5a3a;
+  color: #e8e4d8;
+  border: 1px solid #6a7a5a;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  min-width: 56px;
+}
+
+.shop-buy:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.retire-btn {
+  margin-top: 10px;
+  width: 100%;
+  background: #6a3a3a;
+  color: #e8e4d8;
+  border: 1px solid #8a5a5a;
+  border-radius: 4px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.retire-btn:hover {
+  background: #7a4a4a;
+}
+
+.offline-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 22, 16, 0.85);
+  color: #e8e4d8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  border-radius: 4px;
+}
+
+#app {
+  position: relative;
+}

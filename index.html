@@ -3,13 +3,97 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AB Line Evolve</title>
+    <title>AB Line Evolve - Precision Ag AI Guidance</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <div id="app">
-      <canvas id="track-canvas" width="900" height="600"></canvas>
-      <div id="hud"></div>
+      <!-- AgTech Cockpit Header -->
+      <header id="cockpit-header">
+        <div class="brand">
+          <div class="brand-badge">GPS RTK</div>
+          <div class="brand-text">
+            <h1>AB LINE EVOLVE</h1>
+            <span class="subtitle">AUTONOMOUS FLEET GUIDANCE SYSTEM</span>
+          </div>
+        </div>
+
+        <div class="telemetry-bar">
+          <div class="stat-card">
+            <span class="stat-label">GENERATION</span>
+            <span id="gen-label" class="stat-value highlight-green">Gen 1</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">ROW PROGRESS</span>
+            <span id="row-label" class="stat-value">Row 1/4</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">BEST RECORD</span>
+            <span id="fitness-label" class="stat-value">0 m</span>
+          </div>
+          <div class="stat-card currency-card">
+            <span class="stat-label">CREDITS</span>
+            <span id="credits-value" class="stat-value highlight-yellow">0</span>
+          </div>
+          <div class="stat-card legacy-card">
+            <span class="stat-label">LEGACY POINTS</span>
+            <span id="legacy-value" class="stat-value highlight-purple">0 LP</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Viewport & Canvas Container -->
+      <div id="viewport-container">
+        <canvas id="track-canvas" width="900" height="600"></canvas>
+        <div id="floating-notifications"></div>
+
+        <!-- Quick Viewport Overlay Controls -->
+        <div id="viewport-controls">
+          <div class="control-group">
+            <button id="speed-1x" class="hud-btn active">1x</button>
+            <button id="speed-2x" class="hud-btn">2x</button>
+            <button id="speed-5x" class="hud-btn">5x</button>
+            <button id="speed-16x" class="hud-btn">16x</button>
+          </div>
+
+          <div class="control-group">
+            <button id="cam-toggle" class="hud-btn" title="Toggle between Overview and Champion Tracking camera">
+              <span class="btn-icon">🎥</span> <span id="cam-label">Overview</span>
+            </button>
+            <button id="drive-toggle" class="hud-btn" title="Take manual steering control with WASD or Arrow Keys">
+              <span class="btn-icon">🚜</span> <span id="drive-label">Drive</span>
+            </button>
+            <button id="audio-toggle" class="hud-btn" title="Toggle Sound">
+              <span id="audio-icon" class="btn-icon">🔊</span>
+            </button>
+            <button id="shop-toggle" class="hud-btn primary">
+              <span class="btn-icon">⚡</span> Upgrades & Legacy
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drive instructions banner (shown when test drive is enabled) -->
+      <div id="drive-helper" style="display: none;">
+        <span>🎮 Manual Test Drive Active: Use <strong>W / Up</strong> for Throttle, <strong>A / D / Left / Right</strong> to Steer, <strong>S / Down</strong> to Brake</span>
+      </div>
+
+      <!-- Shop & Prestige Drawer / Panel -->
+      <div id="shop-panel" class="shop-panel"></div>
+
+      <!-- Offline Progress Catch-up Modal -->
+      <div id="offline-overlay" class="offline-overlay" style="display: none;">
+        <div class="offline-card">
+          <div class="offline-spinner"></div>
+          <div id="offline-text">Simulating offline fleet progress…</div>
+          <div class="progress-bar-wrap">
+            <div id="offline-bar" class="progress-bar-fill"></div>
+          </div>
+        </div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

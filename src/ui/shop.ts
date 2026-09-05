@@ -1,10 +1,7 @@
 import { UPGRADES, upgradeCost, type UpgradeId, type UpgradeLevels } from "../sim/upgrades";
 import { PERMANENT_UPGRADES, permanentUpgradeCost, type PermanentUpgradeId, type PermanentUpgradeLevels } from "../sim/prestige";
 import type { EconomyState } from "../sim/economy";
-
-// DOM-building UI for the upgrade shop + prestige panel. No sim logic here
-// — every button just calls back into main.ts, which owns all state
-// mutation and re-render scheduling.
+import { sound } from "../game/audio";
 
 export interface ShopCallbacks {
   onBuyUpgrade: (id: UpgradeId) => void;
@@ -14,49 +11,100 @@ export interface ShopCallbacks {
 
 export function buildShopPanel(container: HTMLElement, callbacks: ShopCallbacks): void {
   container.innerHTML = `
-    <div class="shop-section">
-      <h3>Upgrades <span class="shop-hint">(reset on retirement)</span></h3>
-      <div id="shop-upgrades"></div>
+    <div class="shop-tabs">
+      <button id="tab-run-btn" class="shop-tab-btn active">⚡ Fleet Upgrades (This Run)</button>
+      <button id="tab-legacy-btn" class="shop-tab-btn">🌟 Legacy Tech (Permanent)</button>
     </div>
-    <div class="shop-section">
-      <h3>Legacy <span class="shop-hint">(permanent)</span></h3>
-      <div id="shop-permanent"></div>
-      <button id="retire-btn" class="retire-btn">Retire this run</button>
+
+    <div id="tab-run-content" class="shop-tab-content">
+      <div id="shop-upgrades-grid" class="shop-grid"></div>
+    </div>
+
+    <div id="tab-legacy-content" class="shop-tab-content" style="display: none;">
+      <div id="shop-legacy-grid" class="shop-grid"></div>
+      <div class="retire-box">
+        <div class="retire-description">
+          Retiring resets your current run's fleet and run upgrades, but awards permanent <strong>Legacy Points</strong> based on total credits earned.
+        </div>
+        <button id="retire-btn" class="retire-btn">Retire Fleet</button>
+      </div>
     </div>
   `;
 
-  container.querySelector("#retire-btn")!.addEventListener("click", () => callbacks.onRetire());
+  const runTabBtn = container.querySelector("#tab-run-btn") as HTMLButtonElement;
+  const legacyTabBtn = container.querySelector("#tab-legacy-btn") as HTMLButtonElement;
+  const runContent = container.querySelector("#tab-run-content") as HTMLElement;
+  const legacyContent = container.querySelector("#tab-legacy-content") as HTMLElement;
 
-  const upgradesEl = container.querySelector("#shop-upgrades")!;
+  runTabBtn.addEventListener("click", () => {
+    sound.playClick();
+    runTabBtn.classList.add("active");
+    legacyTabBtn.classList.remove("active");
+    runContent.style.display = "block";
+    legacyContent.style.display = "none";
+  });
+
+  legacyTabBtn.addEventListener("click", () => {
+    sound.playClick();
+    legacyTabBtn.classList.add("active");
+    runTabBtn.classList.remove("active");
+    legacyContent.style.display = "block";
+    runContent.style.display = "none";
+  });
+
+  container.querySelector("#retire-btn")!.addEventListener("click", () => {
+    sound.playClick();
+    callbacks.onRetire();
+  });
+
+  // Build Run Upgrade Cards
+  const upgradesGrid = container.querySelector("#shop-upgrades-grid")!;
   for (const def of UPGRADES) {
-    const row = document.createElement("div");
-    row.className = "shop-row";
-    row.id = `upgrade-row-${def.id}`;
-    row.innerHTML = `
-      <div class="shop-row-info">
-        <strong>${def.name}</strong> <span class="shop-level"></span>
-        <div class="shop-desc">${def.description}</div>
+    const card = document.createElement("div");
+    card.className = "upgrade-card";
+    card.id = `upgrade-card-${def.id}`;
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="card-title-group">
+          <strong>${def.name}</strong>
+          <div class="card-desc">${def.description}</div>
+        </div>
+        <span class="card-level-badge">Lv 0/${def.maxLevel}</span>
       </div>
-      <button class="shop-buy"></button>
+      <div class="card-bottom">
+        <span class="card-cost">${def.baseCost} Credits</span>
+        <button class="buy-btn">Upgrade</button>
+      </div>
     `;
-    row.querySelector(".shop-buy")!.addEventListener("click", () => callbacks.onBuyUpgrade(def.id));
-    upgradesEl.appendChild(row);
+    card.querySelector(".buy-btn")!.addEventListener("click", () => {
+      callbacks.onBuyUpgrade(def.id);
+    });
+    upgradesGrid.appendChild(card);
   }
 
-  const permanentEl = container.querySelector("#shop-permanent")!;
+  // Build Permanent Legacy Cards
+  const legacyGrid = container.querySelector("#shop-legacy-grid")!;
   for (const def of PERMANENT_UPGRADES) {
-    const row = document.createElement("div");
-    row.className = "shop-row";
-    row.id = `permanent-row-${def.id}`;
-    row.innerHTML = `
-      <div class="shop-row-info">
-        <strong>${def.name}</strong> <span class="shop-level"></span>
-        <div class="shop-desc">${def.description}</div>
+    const card = document.createElement("div");
+    card.className = "upgrade-card";
+    card.id = `permanent-card-${def.id}`;
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="card-title-group">
+          <strong>${def.name}</strong>
+          <div class="card-desc">${def.description}</div>
+        </div>
+        <span class="card-level-badge">Lv 0/${def.maxLevel}</span>
       </div>
-      <button class="shop-buy"></button>
+      <div class="card-bottom">
+        <span class="card-cost legacy">${def.baseCost} LP</span>
+        <button class="buy-btn">Unlock</button>
+      </div>
     `;
-    row.querySelector(".shop-buy")!.addEventListener("click", () => callbacks.onBuyPermanent(def.id));
-    permanentEl.appendChild(row);
+    card.querySelector(".buy-btn")!.addEventListener("click", () => {
+      callbacks.onBuyPermanent(def.id);
+    });
+    legacyGrid.appendChild(card);
   }
 }
 
@@ -68,37 +116,47 @@ export function refreshShopPanel(
   previewLegacyPoints: number
 ): void {
   for (const def of UPGRADES) {
-    const row = container.querySelector(`#upgrade-row-${def.id}`);
-    if (!row) continue;
+    const card = container.querySelector(`#upgrade-card-${def.id}`);
+    if (!card) continue;
     const level = upgrades[def.id];
     const cost = upgradeCost(def, level);
-    row.querySelector(".shop-level")!.textContent = `Lv ${level}/${def.maxLevel}`;
-    const btn = row.querySelector(".shop-buy") as HTMLButtonElement;
+    card.querySelector(".card-level-badge")!.textContent = `Lv ${level}/${def.maxLevel}`;
+    const btn = card.querySelector(".buy-btn") as HTMLButtonElement;
+    const costLabel = card.querySelector(".card-cost") as HTMLElement;
+
     if (cost === null) {
+      costLabel.textContent = "MAX TIER";
       btn.textContent = "MAX";
       btn.disabled = true;
     } else {
-      btn.textContent = `${cost}`;
+      costLabel.textContent = `${cost} Credits`;
+      btn.textContent = "Upgrade";
       btn.disabled = economy.currency < cost;
     }
   }
 
   for (const def of PERMANENT_UPGRADES) {
-    const row = container.querySelector(`#permanent-row-${def.id}`);
-    if (!row) continue;
+    const card = container.querySelector(`#permanent-card-${def.id}`);
+    if (!card) continue;
     const level = permanent[def.id];
     const cost = permanentUpgradeCost(def, level);
-    row.querySelector(".shop-level")!.textContent = `Lv ${level}/${def.maxLevel}`;
-    const btn = row.querySelector(".shop-buy") as HTMLButtonElement;
+    card.querySelector(".card-level-badge")!.textContent = `Lv ${level}/${def.maxLevel}`;
+    const btn = card.querySelector(".buy-btn") as HTMLButtonElement;
+    const costLabel = card.querySelector(".card-cost") as HTMLElement;
+
     if (cost === null) {
+      costLabel.textContent = "MAX TIER";
       btn.textContent = "MAX";
       btn.disabled = true;
     } else {
-      btn.textContent = `${cost} LP`;
+      costLabel.textContent = `${cost} LP`;
+      btn.textContent = "Unlock";
       btn.disabled = economy.prestigeCurrency < cost;
     }
   }
 
   const retireBtn = container.querySelector("#retire-btn") as HTMLButtonElement | null;
-  if (retireBtn) retireBtn.textContent = `Retire this run  (+${previewLegacyPoints} Legacy Points)`;
+  if (retireBtn) {
+    retireBtn.textContent = `Retire Fleet (+${previewLegacyPoints} Legacy Points)`;
+  }
 }

@@ -28,6 +28,8 @@ export interface Vehicle {
   alive: boolean;
   timeAlive: number;
   arcProgress: number; // furthest arc-length reached along centerline
+  lastSteer?: number;
+  lastThrottle?: number;
 }
 
 export interface Genome {

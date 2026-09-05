@@ -53,6 +53,8 @@ export function stepVehicle(
 
   const inputs = [...vehicle.sensors, vehicle.speed / physics.maxSpeed];
   const [steer, throttle] = forward(netCfg, vehicle.genome, inputs);
+  vehicle.lastSteer = steer;
+  vehicle.lastThrottle = throttle;
 
   const speedMult = obstacleSpeedMultiplierAt(obstacles, vehicle);
   const effectiveMaxSpeed = physics.maxSpeed * speedMult;

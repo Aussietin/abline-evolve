@@ -6,6 +6,6 @@ package_name = ""
 bundle_path = ""
 
 [itch]
-game = "aman11/ab-line-evolve"
+game = "austin-c/ab-line-evolve"
 build_path = "dist"
 channel = "html5"

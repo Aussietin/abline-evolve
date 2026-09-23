@@ -5,6 +5,27 @@ import type { Obstacle, Point } from "../sim/types";
 import { washoutEdges } from "../sim/types";
 import { drawTractor } from "./sprites";
 
+// --- Overview camera fit ---
+export interface ViewTransform {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+// Scale + offset that fits the whole paddock into the canvas with a margin,
+// so nothing renders off-edge in overview mode. Apply as
+// `ctx.translate(offsetX, offsetY); ctx.scale(scale, scale)` before drawing
+// the world-space layers (same layers follow-cam draws inside its transform).
+export function fitFieldTransform(track: Track, width: number, height: number, margin = 42): ViewTransform {
+  const b = track.bounds;
+  const fw = Math.max(1, b.maxX - b.minX);
+  const fh = Math.max(1, b.maxY - b.minY);
+  const scale = Math.min((width - margin * 2) / fw, (height - margin * 2) / fh);
+  const offsetX = (width - fw * scale) / 2 - b.minX * scale;
+  const offsetY = (height - fh * scale) / 2 - b.minY * scale;
+  return { scale, offsetX, offsetY };
+}
+
 // --- Static Field Layer (baked once per track/size) ---
 let staticLayer: HTMLCanvasElement | null = null;
 let staticLayerKey = "";

@@ -7,6 +7,7 @@ export interface ShopCallbacks {
   onBuyUpgrade: (id: UpgradeId) => void;
   onBuyPermanent: (id: PermanentUpgradeId) => void;
   onRetire: () => void;
+  onResetSave: () => void;
 }
 
 export function buildShopPanel(container: HTMLElement, callbacks: ShopCallbacks): void {
@@ -27,6 +28,12 @@ export function buildShopPanel(container: HTMLElement, callbacks: ShopCallbacks)
           Retiring resets your current run's fleet and run upgrades, but awards permanent <strong>Legacy Points</strong> based on total credits earned.
         </div>
         <button id="retire-btn" class="retire-btn">Retire Fleet</button>
+      </div>
+      <div class="retire-box danger-box">
+        <div class="retire-description">
+          Wipe <strong>everything</strong> - fleet, run upgrades, credits, Legacy Points - and start a completely fresh save.
+        </div>
+        <button id="reset-save-btn" class="retire-btn danger-btn">Reset All Progress</button>
       </div>
     </div>
   `;
@@ -55,6 +62,11 @@ export function buildShopPanel(container: HTMLElement, callbacks: ShopCallbacks)
   container.querySelector("#retire-btn")!.addEventListener("click", () => {
     sound.playClick();
     callbacks.onRetire();
+  });
+
+  container.querySelector("#reset-save-btn")!.addEventListener("click", () => {
+    sound.playClick();
+    callbacks.onResetSave();
   });
 
   // Build Run Upgrade Cards

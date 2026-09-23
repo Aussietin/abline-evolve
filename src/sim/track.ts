@@ -12,6 +12,7 @@ export interface Track {
   totalLength: number;
   rowCount: number; // v3: number of parallel AB-line rows this track covers (1 for a plain single line)
   rowEndDistances: number[]; // v3: cumulative arc length at the end of each row, for "row X of N" HUD/fitness display
+  bounds: { minX: number; minY: number; maxX: number; maxY: number }; // AABB of the corridor walls - camera fit + off-field kill
 }
 
 function perpendicular(dx: number, dy: number): Point {
@@ -50,6 +51,14 @@ export function buildTrack(centerline: Point[], width: number): Track {
   const startHeading = Math.atan2(second.y - start.y, second.x - start.x);
   const totalLength = cumDist[cumDist.length - 1];
 
+  const boundsPts = [...left, ...right, ...centerline];
+  const bounds = {
+    minX: Math.min(...boundsPts.map((p) => p.x)),
+    minY: Math.min(...boundsPts.map((p) => p.y)),
+    maxX: Math.max(...boundsPts.map((p) => p.x)),
+    maxY: Math.max(...boundsPts.map((p) => p.y)),
+  };
+
   return {
     id: "paddock-01",
     centerline,
@@ -61,6 +70,7 @@ export function buildTrack(centerline: Point[], width: number): Track {
     totalLength,
     rowCount: 1,
     rowEndDistances: [totalLength],
+    bounds,
   };
 }
 
@@ -74,13 +84,13 @@ export interface FieldLayoutConfig {
 }
 
 // Builds a real multi-row paddock: `rowCount` parallel rows worked in a
-// boustrophedon ("back and forth") pattern — row 1 end to end, a headland
-// U-turn, row 2 in the opposite direction, and so on — exactly how a real
+// boustrophedon ("back and forth") pattern - row 1 end to end, a headland
+// U-turn, row 2 in the opposite direction, and so on - exactly how a real
 // spray/plant job covers a paddock. It's expressed as one long continuous
 // centerline (straight row segments + semicircular headland turns), which
 // means every existing centerline-consumer (buildTrack, projectArcLength,
 // distanceToNearestWall, the renderer's baked static layer) works on it
-// completely unchanged — multi-row coverage falls out of richer geometry,
+// completely unchanged - multi-row coverage falls out of richer geometry,
 // not a new mechanic.
 export function buildBoustrophedonField(cfg: FieldLayoutConfig, width: number): Track {
   const { rowCount, rowLength, rowSpacing, startX, startY, turnSegments = 12 } = cfg;
@@ -118,8 +128,45 @@ export function buildBoustrophedonField(cfg: FieldLayoutConfig, width: number): 
   return { ...track, rowCount, rowEndDistances };
 }
 
-// Project a point onto the centerline polyline; returns arc-length of the
-// closest point (used as fitness — "how far along the row has it gotten").
+// Progress along the centerline, constrained to advance contiguously: only the
+// stretch of centerline within `lookAhead` arc-length of where the point has
+// ALREADY reached is considered. Without this, a path that merely passes near a
+// *later* part of the route scores its arc length - and on this boustrophedon
+// field every row-end converges at the left edge, so a tractor could drive a
+// straight line down the left side from A to B and be credited with a full
+// field's worth of fitness without working a single row. The window forces a
+// genuine traversal. `lookAhead` (180) comfortably exceeds one headland turn
+// (~140) but is far short of a row (650), so turns aren't penalised and cross-
+// row skips are impossible.
+export function advanceArcProgress(track: Track, p: Point, prevArc: number, lookAhead = 180): number {
+  const { centerline, cumDist } = track;
+  const lo = prevArc - 40;
+  const hi = prevArc + lookAhead;
+  let best = Infinity;
+  let bestArc = prevArc;
+  for (let i = 0; i < centerline.length - 1; i++) {
+    if (cumDist[i + 1] < lo || cumDist[i] > hi) continue;
+    const a = centerline[i];
+    const b = centerline[i + 1];
+    const abx = b.x - a.x;
+    const aby = b.y - a.y;
+    const lenSq = abx * abx + aby * aby || 1;
+    let t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    const cx = a.x + t * abx;
+    const cy = a.y + t * aby;
+    const dist = Math.hypot(p.x - cx, p.y - cy);
+    if (dist < best) {
+      best = dist;
+      const segLen = Math.hypot(abx, aby);
+      bestArc = cumDist[i] + t * segLen;
+    }
+  }
+  return bestArc;
+}
+
+// Global nearest-point projection onto the centerline (no forward window).
+// Used for "which row am I nearest" HUD readouts, not for fitness.
 export function projectArcLength(track: Track, p: Point): number {
   let best = Infinity;
   let bestArc = 0;
@@ -154,7 +201,7 @@ export function distanceToNearestWall(track: Track, p: Point): number {
 }
 
 // Which row (1-indexed) a given arc-length distance along the centerline
-// currently falls in — for the "Row X / N" HUD readout.
+// currently falls in - for the "Row X / N" HUD readout.
 export function rowIndexAtArc(track: Track, arc: number): number {
   for (let i = 0; i < track.rowEndDistances.length; i++) {
     if (arc <= track.rowEndDistances[i]) return i + 1;

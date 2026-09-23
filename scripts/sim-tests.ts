@@ -1,4 +1,4 @@
-// Standalone headless test harness — no framework, run directly with:
+// Standalone headless test harness - no framework, run directly with:
 //   node scripts/sim-tests.ts
 // Node 22.7+/24 strips basic TypeScript syntax natively, so this needs no
 // build step. Keep this file to erasable TS only (no enums/namespaces/
@@ -22,7 +22,7 @@ import {
   nextObstacleGenId,
   DEFAULT_OBSTACLE_CONFIG,
 } from "../src/sim/obstacles.ts";
-import { buildBoustrophedonField, rowIndexAtArc } from "../src/sim/track.ts";
+import { buildBoustrophedonField, rowIndexAtArc, projectArcLength, advanceArcProgress } from "../src/sim/track.ts";
 import {
   createEconomyState,
   generationReward,
@@ -82,7 +82,7 @@ const physics: VehiclePhysicsConfig = {
   sensorRange: 140,
   sensorFanDegrees: 160,
 };
-// v3: two sensor channels per ray (wall + obstacle) — see sensors.ts/vehicle.ts.
+// v3: two sensor channels per ray (wall + obstacle) - see sensors.ts/vehicle.ts.
 const netCfg: NeuralNetConfig = { inputSize: physics.sensorCount * 2 + 1, hiddenSize: 8, outputSize: 2 };
 const popCfg: PopulationConfig = { size: 24, mutationRate: 0.2, mutationMagnitude: 0.4, maxGenerationSeconds: 12 };
 
@@ -290,10 +290,30 @@ const popCfg: PopulationConfig = { size: 24, mutationRate: 0.2, mutationMagnitud
     "arc length just past row 1's end reports row 2"
   );
 
-  // A single-row buildTrack (no field config) still reports sane defaults —
+  // A single-row buildTrack (no field config) still reports sane defaults -
   // multi-row support didn't regress the plain single-line case.
   const single = buildBoustrophedonField({ rowCount: 1, rowLength: 400, rowSpacing: 90, startX: 0, startY: 0 }, 70);
   assert(single.rowCount === 1 && single.rowEndDistances.length === 1, "a 1-row field behaves like a plain single line");
+
+  // advanceArcProgress must NOT let a point skip ahead by being near a later
+  // part of the route. On this field every row-end sits at the left edge, so a
+  // point parked at POINT B (the very end) while progress is still 0 would,
+  // under a naive global projection, score the whole field.
+  const pointB = field.centerline[field.centerline.length - 1];
+  assert(
+    projectArcLength(field, pointB) > field.totalLength - 2,
+    "global projectArcLength credits POINT B with the full field length (the exploitable behaviour)"
+  );
+  assert(
+    advanceArcProgress(field, pointB, 0) < 200,
+    "advanceArcProgress from arc 0 refuses to jump to POINT B - only the forward window counts"
+  );
+  // ...but genuine forward motion along row 1 is credited normally.
+  const midRow1 = { x: 80 + 300, y: 120 };
+  assert(
+    Math.abs(advanceArcProgress(field, midRow1, 250) - 300) < 5,
+    "advanceArcProgress tracks real progress along the current row"
+  );
 }
 
 // --- v3: obstacle sensor casting -------------------------------------------
@@ -330,7 +350,7 @@ const popCfg: PopulationConfig = { size: 24, mutationRate: 0.2, mutationMagnitud
   assert(!hardObstacleHit([washout], { x: 50, y: 100 }, 9), "a point far off a washout's line is not a hard hit");
 
   const bog = { kind: "bog" as const, x: 0, y: 0, radius: 20 };
-  assert(!hardObstacleHit([bog], { x: 0, y: 0 }, 9), "bog holes never register as a hard hit — soft hazard only");
+  assert(!hardObstacleHit([bog], { x: 0, y: 0 }, 9), "bog holes never register as a hard hit - soft hazard only");
   assert(obstacleSpeedMultiplierAt([bog], { x: 0, y: 0 }) < 1, "standing inside a bog hole slows the effective max speed");
   assert(obstacleSpeedMultiplierAt([bog], { x: 500, y: 500 }) === 1, "outside any bog hole, speed is unaffected");
 
@@ -360,7 +380,7 @@ const popCfg: PopulationConfig = { size: 24, mutationRate: 0.2, mutationMagnitud
   const v = spawnVehicle(track, genome);
   // Drop a stump exactly on the vehicle's own spawn point so the very first
   // step's collision check trips regardless of what the (random) genome
-  // outputs for steer/throttle — proves the hard-hazard path in vehicle.ts
+  // outputs for steer/throttle - proves the hard-hazard path in vehicle.ts
   // actually ends the generation, consistent with the existing wall-hit path.
   const stumpOnSpawn = [{ kind: "stump" as const, x: v.x, y: v.y, radius: physics.radius + 5 }];
   stepVehicle(v, track, stumpOnSpawn, physics, netCfg, 1 / 60);
@@ -369,6 +389,23 @@ const popCfg: PopulationConfig = { size: 24, mutationRate: 0.2, mutationMagnitud
   const v2 = spawnVehicle(track, genome);
   stepVehicle(v2, track, [], physics, netCfg, 1 / 60);
   assert(v2.alive, "with no obstacles present, the same first step leaves the vehicle alive");
+}
+
+// --- a vehicle that drives off the paddock (past the open start gate) dies ---
+{
+  const genome = randomGenome(weightCount(netCfg));
+  const v = spawnVehicle(track, genome);
+  // Teleport it well outside the corridor AABB - the wall segments don't extend
+  // out here, so only the off-field check can end its generation.
+  v.x = track.bounds.minX - 200;
+  v.y = track.startPose.y;
+  stepVehicle(v, track, [], physics, netCfg, 1 / 60);
+  assert(!v.alive, "a vehicle far outside the paddock AABB is killed even with the corridor walls out of range");
+
+  assert(
+    track.bounds.minX < track.startPose.x && track.bounds.maxX > track.startPose.x,
+    "track bounds enclose the start pose"
+  );
 }
 
 console.log(`\n${passed} passed, ${failures} failed`);

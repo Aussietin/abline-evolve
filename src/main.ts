@@ -2,8 +2,9 @@ import type { NeuralNetConfig, VehiclePhysicsConfig } from "./sim/types";
 import { paddockField01 } from "./content/tracks";
 import { createPopulation, stepPopulation, type Population, type PopulationConfig } from "./sim/population";
 import { cloneGenome } from "./sim/genome";
-import { rowIndexAtArc, distanceToNearestWall, projectArcLength } from "./sim/track";
+import { rowIndexAtArc, distanceToNearestWall, advanceArcProgress } from "./sim/track";
 import { hardObstacleHit, obstacleSpeedMultiplierAt } from "./sim/obstacles";
+import { isOutsideField } from "./sim/vehicle";
 import {
   renderTrack,
   renderPopulation,
@@ -16,6 +17,7 @@ import {
   emitCrashDebris,
   emitMilestoneSparks,
   fadeSwathLayer,
+  fitFieldTransform,
 } from "./game/render";
 import {
   drawFitnessSparkline,
@@ -47,7 +49,7 @@ import {
   type PermanentUpgradeId,
 } from "./sim/prestige";
 import { seedPopulationWithInheritance } from "./sim/seed";
-import { saveGame, loadGame } from "./game/save";
+import { saveGame, loadGame, clearSave } from "./game/save";
 import { runOfflineReplay } from "./game/offlineProgress";
 import { buildShopPanel, refreshShopPanel } from "./ui/shop";
 import { sound } from "./game/audio";
@@ -244,8 +246,23 @@ function buildShop(): void {
     onBuyUpgrade: buyUpgrade,
     onBuyPermanent: buyPermanent,
     onRetire: doRetire,
+    onResetSave: resetAllProgress,
   });
   refreshShop();
+}
+
+// When true, the autosave interval and the beforeunload handler stop writing -
+// used so a deliberate "reset all progress" isn't immediately re-saved by the
+// unload flush before the reload lands.
+let saveSuspended = false;
+
+function resetAllProgress(): void {
+  if (!window.confirm("Wipe ALL progress - fleet, upgrades, credits, Legacy Points - and start fresh? This cannot be undone.")) {
+    return;
+  }
+  saveSuspended = true;
+  clearSave();
+  location.reload();
 }
 
 function refreshShop(): void {
@@ -343,13 +360,14 @@ function stepManualVehicle(dt: number): void {
   manualVehicle.y += Math.sin(manualVehicle.heading) * manualVehicle.speed * dt;
   manualVehicle.timeAlive += dt;
 
-  const arc = projectArcLength(track, manualVehicle);
+  const arc = advanceArcProgress(track, manualVehicle, manualVehicle.arcProgress);
   if (arc > manualVehicle.arcProgress) manualVehicle.arcProgress = arc;
 
   // Collisions
   if (
     distanceToNearestWall(track, manualVehicle) < physics.radius ||
-    hardObstacleHit(population.obstacles, manualVehicle, physics.radius)
+    hardObstacleHit(population.obstacles, manualVehicle, physics.radius) ||
+    isOutsideField(track, manualVehicle, physics.radius * 4)
   ) {
     manualVehicle.alive = false;
     sound.playCrash();
@@ -478,12 +496,23 @@ function draw(): void {
 
     ctx.restore();
   } else {
-    // Overview mode (full field)
+    // Overview mode - fit the whole paddock to the canvas so nothing (least of
+    // all spun-out genomes near the start gate) renders off the edge.
+    ctx.fillStyle = "#232e15";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const t = fitFieldTransform(track, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(t.offsetX, t.offsetY);
+    ctx.scale(t.scale, t.scale);
+
     renderTrack(ctx, track, canvas.width, canvas.height);
     renderSwathLayer(ctx, canvas.width, canvas.height);
     renderObstacles(ctx, population.obstacles, population.obstacleGenId, canvas.width, canvas.height);
     renderPopulation(ctx, population, physics, manualDriveActive ? manualVehicle : null);
     updateAndRenderParticles(ctx, 1 / 60);
+
+    ctx.restore();
   }
 
   // Particle emission for living vehicles
@@ -504,7 +533,7 @@ function showOfflineOverlay(show: boolean): void {
 
 function updateOfflineOverlay(done: number, total: number): void {
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 100;
-  offlineText.textContent = `Catching up on offline fleet progress… ${pct}%`;
+  offlineText.textContent = `Catching up on offline fleet progress... ${pct}%`;
   offlineBar.style.width = `${pct}%`;
 }
 
@@ -547,8 +576,12 @@ async function init(): Promise<void> {
 
   setInterval(simTick, 33);
   requestAnimationFrame(renderLoop);
-  setInterval(() => saveGame(meta, population), 15000);
-  window.addEventListener("beforeunload", () => saveGame(meta, population));
+  setInterval(() => {
+    if (!saveSuspended) saveGame(meta, population);
+  }, 15000);
+  window.addEventListener("beforeunload", () => {
+    if (!saveSuspended) saveGame(meta, population);
+  });
 }
 
 init();

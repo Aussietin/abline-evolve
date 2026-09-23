@@ -462,6 +462,21 @@ html, body {
   box-shadow: 0 0 14px rgba(220, 60, 60, 0.4);
 }
 
+/* Reset-all-progress: neutral grey so it doesn't compete with Retire */
+.danger-box {
+  margin-top: 10px;
+}
+
+.danger-btn {
+  background: linear-gradient(135deg, #3a3f3a, #2a2e2a);
+  border-color: #5a625a;
+}
+
+.danger-btn:hover {
+  background: linear-gradient(135deg, #4a504a, #363b36);
+  box-shadow: 0 0 14px rgba(160, 170, 160, 0.25);
+}
+
 /* --- Offline Progress Modal --- */
 .offline-overlay {
   position: fixed;

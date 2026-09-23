@@ -1,0 +1,11 @@
+[project]
+name = "AB Line Evolve"
+
+[google_play]
+package_name = ""
+bundle_path = ""
+
+[itch]
+game = "aman11/ab-line-evolve"
+build_path = "dist"
+channel = "html5"

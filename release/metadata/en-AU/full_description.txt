@@ -1,0 +1,3 @@
+Control an evolving fleet of autonomous tractors on a four-row paddock. Each generation learns to follow AB guidance lines, negotiate headland turns, and avoid field hazards. Upgrade the fleet, watch its best driver, or take the wheel yourself.
+
+AB Line Evolve is a precision-ag idle simulation built around a neuroevolution experiment.

@@ -6,7 +6,7 @@
 - [x] Browser-playable HTML build produced in `dist/` and `index.html` is at its root
 - [x] `release.toml` points to `austin-c/ab-line-evolve`, `dist`, and the `html5` channel. The account homepage confirms `austin-c.itch.io` (display name Aman11).
 - [x] Create and save the itch.io project page as `https://austin-c.itch.io/ab-line-evolve`; public page verified (HTTP 200, title `AB Line Evolve by Aman11`, marked playable in browser)
-- [ ] Upload the cover and gameplay screenshot; set the page layout to show the screenshot column (itch.io hides it by default on embedded games)
+- [x] Upload the cover and gameplay screenshot; set the page layout to show the screenshot column (itch.io hides it by default on embedded games). Done 2026-09-26: cover + screenshot uploaded, theme Screenshots = Sidebar, embed 960x720 (Mobile friendly, Fullscreen button)
 - [x] Publish the `html5` channel: upload #19361081, completed build #2006550 (Butler status verified)
 
 The Release Kit currently has no automated desktop-game screenshot capture. This one was captured from the live HTML5 game with a browser screenshot. The screenshot and prepared cover still need to be added through the itch.io creator page.

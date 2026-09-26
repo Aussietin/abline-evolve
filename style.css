@@ -145,10 +145,12 @@ html, body {
   background: #1e2819;
 }
 
+/* Bitmap stays 900x600; CSS scales it to fit narrow embeds (itch iframe, phones) instead of cropping. */
 #track-canvas {
   display: block;
-  width: 900px;
-  height: 600px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 2;
   background: #28371c;
   cursor: crosshair;
 }
@@ -164,6 +166,18 @@ html, body {
   align-items: center;
   pointer-events: none;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Narrow embeds: move the HUD controls under the canvas so they don't cover the field. */
+@media (max-width: 700px) {
+  #viewport-controls {
+    position: static;
+    padding: 8px;
+  }
+  .control-group {
+    flex-wrap: wrap;
+  }
 }
 
 .control-group {

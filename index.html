@@ -78,7 +78,19 @@
 
       <!-- Drive instructions banner (shown when test drive is enabled) -->
       <div id="drive-helper" style="display: none;">
-        <span>🎮 Manual Test Drive Active: Use <strong>W / Up</strong> for Throttle, <strong>A / D / Left / Right</strong> to Steer, <strong>S / Down</strong> to Brake</span>
+        <span class="drive-keys">🎮 Manual Test Drive Active: Use <strong>W / Up</strong> for Throttle, <strong>A / D / Left / Right</strong> to Steer, <strong>S / Down</strong> to Brake</span>
+        <span class="drive-touch">🎮 Manual Test Drive: hold the buttons below to steer, gas and brake</span>
+        <!-- Touch drive pad: feeds the same key state as the keyboard (shown on touch screens only) -->
+        <div id="drive-pad" aria-label="Drive controls">
+          <div class="pad-group">
+            <button type="button" class="pad-btn" data-key="ArrowLeft" aria-label="Steer left">◀</button>
+            <button type="button" class="pad-btn" data-key="ArrowRight" aria-label="Steer right">▶</button>
+          </div>
+          <div class="pad-group">
+            <button type="button" class="pad-btn brake" data-key="ArrowDown" aria-label="Brake">BRAKE</button>
+            <button type="button" class="pad-btn gas" data-key="ArrowUp" aria-label="Gas">GAS</button>
+          </div>
+        </div>
       </div>
 
       <!-- Shop & Prestige Drawer / Panel -->

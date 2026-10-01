@@ -544,3 +544,27 @@ html, body {
   box-shadow: 0 0 8px var(--accent-green);
   transition: width 0.1s linear;
 }
+
+/* --- Touch screens: drive pad, 44px targets, no zoom/scroll bleed --- */
+#drive-pad { display: none; }
+.drive-touch { display: none; }
+
+@media (pointer: coarse) {
+  html, body { touch-action: manipulation; overscroll-behavior: none; }
+  body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+  .hud-btn { min-height: 44px; min-width: 44px; justify-content: center; }
+  .drive-keys { display: none; }
+  .drive-touch { display: inline; }
+  #drive-pad { display: flex; justify-content: space-between; gap: 12px; margin-top: 10px; }
+  .pad-group { display: flex; gap: 10px; flex: 1; }
+  .pad-btn {
+    flex: 1; min-width: 0; min-height: 64px; padding: 0 6px;
+    border-radius: 12px; border: 1px solid var(--accent-cyan);
+    background: rgba(56, 189, 248, 0.12); color: var(--accent-cyan);
+    font: 700 18px 'JetBrains Mono', monospace;
+    touch-action: none;
+  }
+  .pad-btn.gas { border-color: var(--accent-green); color: var(--accent-green); }
+  .pad-btn.on { background: rgba(56, 189, 248, 0.35); }
+  .pad-btn.gas.on { background: rgba(82, 224, 120, 0.35); }
+}

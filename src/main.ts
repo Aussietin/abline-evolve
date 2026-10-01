@@ -233,6 +233,33 @@ function setupEventListeners(): void {
   window.addEventListener("keyup", (e) => {
     keysPressed[e.code] = false;
   });
+
+  // Touch drive pad: each button holds its key while pressed. Pointer capture
+  // keeps steer + gas working together and releases cleanly if a finger slides off.
+  document.querySelectorAll<HTMLButtonElement>("#drive-pad .pad-btn").forEach((btn) => {
+    const key = btn.dataset.key!;
+    const release = () => {
+      keysPressed[key] = false;
+      btn.classList.remove("on");
+    };
+    btn.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      try {
+        btn.setPointerCapture(e.pointerId);
+      } catch {
+        /* synthetic or already-released pointer */
+      }
+      keysPressed[key] = true;
+      btn.classList.add("on");
+    });
+    btn.addEventListener("pointerup", release);
+    btn.addEventListener("pointercancel", release);
+    btn.addEventListener("lostpointercapture", release);
+  });
+  // Drop held drive input when the tab is hidden so the tractor doesn't run away.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) for (const k in keysPressed) keysPressed[k] = false;
+  });
 }
 
 function setSpeed(mult: number): void {

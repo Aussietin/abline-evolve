@@ -167,6 +167,64 @@ class SoundManager {
     });
   }
 
+  // One synthesized note: a short enveloped oscillator.
+  private note(freq: number, at: number, dur: number, type: OscillatorType, vol: number): void {
+    if (!this.ctx || !this.masterGain) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, at);
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(vol, at + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + dur);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(at);
+    osc.stop(at + dur + 0.02);
+  }
+
+  // Rising star "ding": pitch climbs with the star number (0-based).
+  public playStar(index: number): void {
+    if (this.muted) return;
+    this.initContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    const f = [659.25, 783.99, 1046.5][Math.min(2, Math.max(0, index))];
+    this.note(f, now, 0.45, "triangle", 0.22);
+    this.note(f * 2, now, 0.3, "sine", 0.08);
+  }
+
+  // Field-clear fanfare: a quick major arpeggio with a held top note.
+  public playFanfare(): void {
+    if (this.muted) return;
+    this.initContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    [392, 523.25, 659.25, 783.99, 1046.5].forEach((f, i) => this.note(f, now + i * 0.09, 0.3, "square", 0.08));
+    this.note(1046.5, now + 0.5, 0.7, "triangle", 0.18);
+    this.note(1318.5, now + 0.5, 0.7, "sine", 0.1);
+  }
+
+  // Medal unlock: a bright two-note blip.
+  public playMedal(): void {
+    if (this.muted) return;
+    this.initContext();
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.note(880, now, 0.14, "square", 0.07);
+    this.note(1318.5, now + 0.1, 0.3, "triangle", 0.16);
+  }
+
+  // Tab hidden / page blurred: silence the engine and freeze the audio clock.
+  public pauseAudio(): void {
+    this.stopEngine();
+    this.ctx?.suspend().catch(() => {});
+  }
+
+  public resumeAudio(): void {
+    if (this.ctx && !this.muted) this.ctx.resume().catch(() => {});
+  }
+
   public playCrash(): void {
     if (this.muted) return;
     this.initContext();

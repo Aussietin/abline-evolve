@@ -66,7 +66,7 @@ function pointAndNormalAtArc(track: Track, d: number): { p: Point; nx: number; n
   return null;
 }
 
-export function generateObstacles(track: Track, cfg: ObstacleGenConfig = DEFAULT_OBSTACLE_CONFIG): Obstacle[] {
+export function generateObstacles(track: Track, cfg: ObstacleGenConfig = track.obstacleCfg ?? DEFAULT_OBSTACLE_CONFIG): Obstacle[] {
   const obstacles: Obstacle[] = [];
   const maxLateral = track.width * 0.25; // keep obstacles off the very edge of the corridor
   const { totalLength } = track;

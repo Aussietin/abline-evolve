@@ -8,7 +8,8 @@
 // prestige/save-load round-trip/offline-replay. Exits non-zero on failure so
 // it's usable in a pre-commit hook or CI later if wanted.
 
-import { paddockField01 } from "../src/content/tracks.ts";
+import { paddockField01, FIELDS } from "../src/content/tracks.ts";
+import { createLoveState, recordClear, starsForGeneration, isFieldUnlocked, checkAchievements } from "../src/sim/progress.ts";
 import { createPopulation, stepPopulation, type PopulationConfig } from "../src/sim/population.ts";
 import type { NeuralNetConfig, VehiclePhysicsConfig } from "../src/sim/types.ts";
 import { weightCount, forward } from "../src/sim/neuralnet.ts";
@@ -406,6 +407,57 @@ const popCfg: PopulationConfig = { size: 24, mutationRate: 0.2, mutationMagnitud
     track.bounds.minX < track.startPose.x && track.bounds.maxX > track.startPose.x,
     "track bounds enclose the start pose"
   );
+}
+
+// --- campaign: fields, stars, unlocks, achievements ---
+{
+  const ids = FIELDS.map((f) => f.id);
+  assert(new Set(ids).size === ids.length, "every field has a unique track id (render cache key)");
+  for (const f of FIELDS) {
+    const t = f.build();
+    assert(t.id === f.id, `${f.id}: built track carries the field id`);
+    assert(t.totalLength > 0 && t.rowCount >= 4, `${f.id}: has rows and length`);
+    assert(t.width / 2 - 9 > 10, `${f.id}: corridor is wide enough for a tractor`);
+    assert(f.par3 < f.par2, `${f.id}: 3-star target is tighter than 2-star`);
+    assert(generateObstacles(t).length > 0, `${f.id}: generates obstacles with its own config`);
+  }
+  assert(
+    starsForGeneration(10, 90, 250) === 3 && starsForGeneration(100, 90, 250) === 2 && starsForGeneration(900, 90, 250) === 1,
+    "starsForGeneration thresholds"
+  );
+  const love = createLoveState();
+  assert(isFieldUnlocked(love, ids, 0) && !isFieldUnlocked(love, ids, 1), "only field 1 is open on a fresh save");
+  const r1 = recordClear(love, ids[0], 200, 90, 250);
+  assert(r1.stars === 2 && r1.firstClear && r1.improvedStars === 2, "first clear records stars");
+  assert(isFieldUnlocked(love, ids, 1), "clearing a field unlocks the next");
+  const r2 = recordClear(love, ids[0], 500, 90, 250);
+  assert(r2.stars === 1 && !r2.firstClear && r2.improvedStars === 0 && love.fields[ids[0]].stars === 2, "a worse replay never lowers the stars");
+  const r3 = recordClear(love, ids[0], 50, 90, 250);
+  assert(r3.improvedStars === 1 && love.fields[ids[0]].stars === 3 && love.fields[ids[0]].bestGen === 50, "an improvement pays only the extra star");
+  const snap = { love, fieldCount: FIELDS.length, totalCredits: 0, retirements: 0, neuralExpansion: false, bestRowReached: 2 };
+  const got = checkAchievements(snap).map((a) => a.id);
+  assert(got.includes("turn") && got.includes("first-clear") && got.includes("three-star"), "achievements fire from state");
+  assert(checkAchievements(snap).length === 0, "an achievement only fires once");
+}
+
+// --- the generation clock stretches with the leader (long fields are clearable) ---
+{
+  const long = FIELDS[1].build();
+  const physics = { maxSpeed: 95, maxAccel: 65, maxTurnRate: 2.0, radius: 9, sensorCount: 5, sensorRange: 140, sensorFanDegrees: 160 };
+  const net = { inputSize: 11, hiddenSize: 8, outputSize: 2 };
+  const cfg = { size: 4, mutationRate: 0.2, mutationMagnitude: 0.4, maxGenerationSeconds: 12 };
+  const pop = createPopulation(long, net, cfg);
+  // Pretend the leader is 2000 m in and still alive: 13 s must not end the generation.
+  pop.vehicles[0].arcProgress = 2000;
+  pop.genSeconds = 13;
+  const gen = pop.generation;
+  stepPopulation(pop, long, physics, net, cfg, 1 / 60);
+  assert(pop.generation === gen, "a leader 2000 m in is not cut off at the old 12 s cap");
+  // A stalled fleet still times out.
+  const stalled = createPopulation(long, net, cfg);
+  stalled.genSeconds = 30;
+  stepPopulation(stalled, long, physics, net, cfg, 1 / 60);
+  assert(stalled.generation === 2, "a stalled fleet still times out");
 }
 
 console.log(`\n${passed} passed, ${failures} failed`);

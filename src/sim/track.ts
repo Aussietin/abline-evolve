@@ -1,5 +1,6 @@
 import type { LineSegment, Point } from "./types";
 import { pointSegmentDistance } from "./sensors";
+import type { ObstacleGenConfig } from "./obstacles";
 
 export interface Track {
   id: string;
@@ -12,6 +13,7 @@ export interface Track {
   totalLength: number;
   rowCount: number; // v3: number of parallel AB-line rows this track covers (1 for a plain single line)
   rowEndDistances: number[]; // v3: cumulative arc length at the end of each row, for "row X of N" HUD/fitness display
+  obstacleCfg?: ObstacleGenConfig; // per-field hazard tuning (read by sim/obstacles.ts)
   bounds: { minX: number; minY: number; maxX: number; maxY: number }; // AABB of the corridor walls - camera fit + off-field kill
 }
 
@@ -81,6 +83,8 @@ export interface FieldLayoutConfig {
   startX: number;
   startY: number;
   turnSegments?: number; // points used to approximate each headland semicircle
+  id?: string; // track id (render cache key)
+  obstacleCfg?: ObstacleGenConfig; // per-field hazard tuning; omitted = defaults
 }
 
 // Builds a real multi-row paddock: `rowCount` parallel rows worked in a
@@ -125,7 +129,7 @@ export function buildBoustrophedonField(cfg: FieldLayoutConfig, width: number): 
 
   const track = buildTrack(points, width);
   const rowEndDistances = rowEndPointIdx.map((i) => track.cumDist[i]);
-  return { ...track, rowCount, rowEndDistances };
+  return { ...track, id: cfg.id ?? track.id, obstacleCfg: cfg.obstacleCfg, rowCount, rowEndDistances };
 }
 
 // Progress along the centerline, constrained to advance contiguously: only the

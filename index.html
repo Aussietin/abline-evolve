@@ -2,11 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1411" />
+    <link rel="icon" href="data:," />
     <title>AB Line Evolve - Precision Ag AI Guidance</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
+    <!-- Sparkwire house rule: zoom/scroll/selection locks (the shop panel scrolls, so manipulation not none). -->
+    <style id="sparkwire-touch">
+      html, body { touch-action: manipulation; overscroll-behavior: none; }
+      body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+      input, textarea { -webkit-user-select: text; user-select: text; }
+    </style>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -17,7 +22,7 @@
           <div class="brand-badge">GPS RTK</div>
           <div class="brand-text">
             <h1>AB LINE EVOLVE</h1>
-            <span class="subtitle">AUTONOMOUS FLEET GUIDANCE SYSTEM</span>
+            <span class="subtitle" id="field-subtitle">AUTONOMOUS FLEET GUIDANCE SYSTEM</span>
           </div>
         </div>
 
@@ -66,6 +71,9 @@
             <button id="drive-toggle" class="hud-btn" title="Take manual steering control with WASD or Arrow Keys">
               <span class="btn-icon">🚜</span> <span id="drive-label">Drive</span>
             </button>
+            <button id="fields-toggle" class="hud-btn" title="Choose a field, see stars and medals">
+              <span class="btn-icon">&#x1F5FA;</span> Fields
+            </button>
             <button id="audio-toggle" class="hud-btn" title="Toggle Sound">
               <span id="audio-icon" class="btn-icon">🔊</span>
             </button>
@@ -95,6 +103,42 @@
 
       <!-- Shop & Prestige Drawer / Panel -->
       <div id="shop-panel" class="shop-panel"></div>
+
+      <!-- Title screen -->
+      <div id="title-screen" class="overlay title-screen">
+        <div class="title-card">
+          <svg class="title-art" viewBox="0 0 320 90" aria-hidden="true">
+            <path class="ab-dash" d="M10 70 L250 70 Q300 70 300 45 Q300 20 250 20 L70 20" />
+            <text class="ab-pt" x="4" y="86">A</text>
+            <text class="ab-pt" x="296" y="86">B</text>
+          </svg>
+          <div class="title-tractor" aria-hidden="true">&#x1F69C;</div>
+          <h2 class="title-logo">AB LINE<br /><span>EVOLVE</span></h2>
+          <p class="title-tag">Breed tractors that drive the line.</p>
+          <div id="title-stats" class="title-stats"></div>
+          <button id="title-play" class="big-btn" type="button">&#x25B6; Play</button>
+          <p class="title-hint">Clear fields for stars. Earn medals. Break the plateau.</p>
+        </div>
+      </div>
+
+      <!-- Fields / medals sheet -->
+      <div id="fields-overlay" class="overlay" style="display: none;">
+        <div class="sheet" role="dialog" aria-label="Fields and medals">
+          <div class="sheet-head">
+            <div class="sheet-tabs">
+              <button type="button" class="sheet-tab active" data-tab="fields">Fields</button>
+              <button type="button" class="sheet-tab" data-tab="medals">Medals</button>
+            </div>
+            <button type="button" id="fields-close" class="sheet-close" aria-label="Close">&#x2715;</button>
+          </div>
+          <div id="fields-body" class="sheet-body"></div>
+        </div>
+      </div>
+
+      <!-- Field cleared card -->
+      <div id="clear-overlay" class="overlay" style="display: none;">
+        <div class="clear-card"></div>
+      </div>
 
       <!-- Offline Progress Catch-up Modal -->
       <div id="offline-overlay" class="offline-overlay" style="display: none;">

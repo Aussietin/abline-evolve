@@ -1,5 +1,5 @@
 import type { NeuralNetConfig, VehiclePhysicsConfig } from "./sim/types";
-import { paddockField01 } from "./content/tracks";
+import { FIELDS } from "./content/tracks";
 import { createPopulation, stepPopulation, type Population, type PopulationConfig } from "./sim/population";
 import { cloneGenome } from "./sim/genome";
 import { rowIndexAtArc, distanceToNearestWall, advanceArcProgress } from "./sim/track";
@@ -18,6 +18,7 @@ import {
   emitMilestoneSparks,
   fadeSwathLayer,
   fitFieldTransform,
+  resetSwathLayer,
 } from "./game/render";
 import {
   drawFitnessSparkline,
@@ -53,8 +54,13 @@ import { saveGame, loadGame, clearSave } from "./game/save";
 import { runOfflineReplay } from "./game/offlineProgress";
 import { buildShopPanel, refreshShopPanel } from "./ui/shop";
 import { sound } from "./game/audio";
+import { loadLove, saveLove, clearLove } from "./game/loveSave";
+import { createLoveState, recordClear, isFieldUnlocked, checkAchievements, type LoveState } from "./sim/progress";
+import { wireFieldsSheet, showClearCard, setTitleStats } from "./ui/campaign";
 
-const track = paddockField01();
+let love: LoveState = loadLove() ?? createLoveState();
+if (love.currentField < 0 || love.currentField >= FIELDS.length) love.currentField = 0;
+let track = FIELDS[love.currentField].build();
 
 const basePhysics: VehiclePhysicsConfig = {
   maxSpeed: 95,
@@ -102,6 +108,9 @@ const notificationsContainer = document.getElementById("floating-notifications")
 const driveHelper = document.getElementById("drive-helper")!;
 
 let speedMultiplier = 1;
+let started = false; // title screen dismissed (gesture also unlocks audio)
+let paused = false; // tab hidden / window blurred
+let hiddenAt = 0; // epoch ms when the tab was hidden, for away catch-up
 const fixedDt = 1 / 60;
 let accumulator = 0;
 let lastSimTime = performance.now();
@@ -145,10 +154,21 @@ function initManualVehicle(): void {
   };
 }
 
-function showToast(message: string): void {
+// Call whenever `population` is swapped for a fresh one (retire, Neural Expansion,
+// field change): resets the per-population trackers so milestones and the field
+// clear can fire again.
+let clearedPopulation: Population | null = null;
+function onPopulationReplaced(): void {
+  lastGeneration = population.generation;
+  lastRecordDistance = population.bestEverFitness;
+  lastAnnouncedRow = 1;
+  meta.rewardedGenerations = 0;
+}
+
+function showToast(message: string, extraClass = ""): void {
   if (!notificationsContainer) return;
   const toast = document.createElement("div");
-  toast.className = "notification-toast";
+  toast.className = "notification-toast" + (extraClass ? " " + extraClass : "");
   toast.textContent = message;
   notificationsContainer.appendChild(toast);
   setTimeout(() => toast.remove(), 2300);
@@ -256,9 +276,50 @@ function setupEventListeners(): void {
     btn.addEventListener("pointercancel", release);
     btn.addEventListener("lostpointercapture", release);
   });
-  // Drop held drive input when the tab is hidden so the tractor doesn't run away.
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) for (const k in keysPressed) keysPressed[k] = false;
+  // Hidden tab / blurred window: freeze the sim, silence audio and drop held input.
+  // On return, away time is credited through the normal offline catch-up replay.
+  const pauseGame = () => {
+    if (paused) return;
+    paused = true;
+    hiddenAt = Date.now();
+    for (const k in keysPressed) keysPressed[k] = false;
+    sound.pauseAudio();
+    saveGame(meta, population);
+    saveLove(love);
+  };
+  const resumeGame = () => {
+    if (!paused) return;
+    paused = false;
+    lastSimTime = performance.now();
+    sound.resumeAudio();
+    const away = (Date.now() - hiddenAt) / 1000;
+    if (started && away > 8) void catchUp(away);
+  };
+  document.addEventListener("visibilitychange", () => (document.hidden ? pauseGame() : resumeGame()));
+  window.addEventListener("blur", pauseGame);
+  window.addEventListener("focus", () => {
+    if (!document.hidden) resumeGame();
+  });
+  window.addEventListener("pagehide", () => saveLove(love));
+
+  const sheet = wireFieldsSheet(() => love, {
+    onPick: (i) => {
+      sound.playClick();
+      switchField(i);
+      sheet.close();
+    },
+  });
+  document.getElementById("fields-toggle")?.addEventListener("click", () => {
+    sound.playClick();
+    sheet.open();
+  });
+
+  document.getElementById("title-play")?.addEventListener("click", () => {
+    sound.playClick();
+    started = true;
+    const t = document.getElementById("title-screen")!;
+    t.classList.add("leaving");
+    setTimeout(() => (t.style.display = "none"), 320);
   });
 }
 
@@ -289,6 +350,7 @@ function resetAllProgress(): void {
   }
   saveSuspended = true;
   clearSave();
+  clearLove();
   location.reload();
 }
 
@@ -306,7 +368,7 @@ function buyUpgrade(id: UpgradeId): void {
   if (id === "neuralExpansion") {
     netCfg = { ...baseNetCfg, hiddenSize2: effectiveHiddenSize2(meta.upgrades) };
     population = createPopulation(track, netCfg, popCfg);
-    meta.rewardedGenerations = 0;
+    onPopulationReplaced();
     showToast("🧠 Neural Expansion Activated!");
   } else {
     applyRunUpgradesToConfigs();
@@ -351,6 +413,7 @@ function doRetire(): void {
     population.bestEverGenome = cloneGenome(seedGenome);
   }
 
+  onPopulationReplaced();
   fadeSwathLayer();
   sound.playMilestone();
   showToast(`🌾 Retired! +${preview} Legacy Points Awarded`);
@@ -389,6 +452,8 @@ function stepManualVehicle(dt: number): void {
 
   const arc = advanceArcProgress(track, manualVehicle, manualVehicle.arcProgress);
   if (arc > manualVehicle.arcProgress) manualVehicle.arcProgress = arc;
+  const manualRow = rowIndexAtArc(track, manualVehicle.arcProgress);
+  if (manualRow > love.manualRow) love.manualRow = manualRow;
 
   // Collisions
   if (
@@ -408,6 +473,10 @@ function stepManualVehicle(dt: number): void {
 
 function simTick(): void {
   const now = performance.now();
+  if (paused) {
+    lastSimTime = now; // frozen: don't bank the paused time
+    return;
+  }
   const realDt = Math.min((now - lastSimTime) / 1000, 1);
   lastSimTime = now;
   accumulator += realDt;
@@ -450,9 +519,15 @@ function simTick(): void {
 
   // Detect generation advancement
   if (population.generation > lastGeneration) {
+    love.totalGens += population.generation - lastGeneration;
     lastGeneration = population.generation;
     fadeSwathLayer();
   }
+
+  if (started && clearedPopulation !== population && population.bestEverFitness >= track.totalLength - 1) {
+    handleFieldClear();
+  }
+  runAchievementCheck();
 
   // Check for new distance records
   if (population.bestEverFitness > lastRecordDistance + 60) {
@@ -476,10 +551,108 @@ function simTick(): void {
 
   // Modulate engine sound pitch based on champion speed
   const champSpeed = champion?.alive ? champion.speed / physics.maxSpeed : 0;
-  sound.updateEngine(champSpeed, true);
+  if (started) sound.updateEngine(champSpeed, true);
 
   updateHud();
   refreshShop();
+}
+
+function runAchievementCheck(): void {
+  const champion = population.vehicles[population.currentBestIndex];
+  const fresh = checkAchievements({
+    love,
+    fieldCount: FIELDS.length,
+    totalCredits: meta.economy.totalCurrencyEarned,
+    retirements: meta.retirements,
+    neuralExpansion: meta.upgrades.neuralExpansion > 0,
+    bestRowReached: champion ? rowIndexAtArc(track, population.bestEverFitness) : 1,
+  });
+  if (fresh.length === 0) return;
+  fresh.forEach((a, i) => {
+    setTimeout(() => {
+      showToast(`🏅 ${a.name}`, "medal-toast");
+      sound.playMedal();
+    }, i * 600);
+  });
+  saveLove(love);
+}
+
+function shakeScreen(): void {
+  const el = document.getElementById("viewport-container");
+  if (!el) return;
+  el.classList.remove("shake");
+  void el.offsetWidth; // restart the animation
+  el.classList.add("shake");
+  setTimeout(() => el.classList.remove("shake"), 500);
+}
+
+function handleFieldClear(): void {
+  clearedPopulation = population;
+  const def = FIELDS[love.currentField];
+  // Generation the record first reached the end of the field (history is per-gen best-ever).
+  let gen = population.fitnessHistory.findIndex((f) => f >= track.totalLength - 1) + 1;
+  if (gen <= 0) gen = population.generation;
+  const res = recordClear(love, def.id, gen, def.par3, def.par2);
+  const paidStars = res.firstClear ? res.stars : res.improvedStars;
+  const bonus = def.clearBonus * paidStars;
+  if (bonus > 0) {
+    meta.economy.currency += bonus;
+    meta.economy.totalCurrencyEarned += bonus;
+  }
+  saveLove(love);
+  saveGame(meta, population);
+  shakeScreen();
+  const winner = population.vehicles[population.currentBestIndex];
+  if (winner) for (let i = 0; i < 4; i++) emitMilestoneSparks(winner.x, winner.y);
+  const nextIdx = love.currentField + 1;
+  const hasNext = nextIdx < FIELDS.length && isFieldUnlocked(love, FIELDS.map((f) => f.id), nextIdx);
+  showClearCard(
+    {
+      fieldName: def.name,
+      stars: res.stars,
+      gen,
+      bonus,
+      firstClear: res.firstClear,
+      par3: def.par3,
+      par2: def.par2,
+      nextName: hasNext ? FIELDS[nextIdx].name : null,
+    },
+    hasNext ? () => switchField(nextIdx) : null,
+    () => {}
+  );
+  refreshShop();
+  runAchievementCheck();
+}
+
+function switchField(index: number): void {
+  if (index === love.currentField || index < 0 || index >= FIELDS.length) return;
+  if (!isFieldUnlocked(love, FIELDS.map((f) => f.id), index)) return;
+  // First visit carries the champion's brain across (same net shape); replaying a
+  // cleared field starts from scratch so its stars stay a real challenge.
+  const carry = (love.fields[FIELDS[index].id]?.stars ?? 0) === 0 ? cloneGenome(population.bestEverGenome) : null;
+  love.currentField = index;
+  track = FIELDS[index].build();
+  resetSwathLayer();
+  population = createPopulation(track, netCfg, popCfg);
+  if (carry) {
+    population.vehicles = seedPopulationWithInheritance(track, netCfg, popCfg, carry, popCfg.mutationMagnitude);
+    population.bestEverGenome = carry;
+  }
+  onPopulationReplaced();
+  if (manualDriveActive) initManualVehicle();
+  updateFieldLabels();
+  setSpeed(speedMultiplier);
+  showToast(`🚜 ${FIELDS[index].name}`);
+  sound.playMilestone();
+  saveLove(love);
+  saveGame(meta, population);
+  refreshShop();
+  updateHud();
+}
+
+function updateFieldLabels(): void {
+  const sub = document.getElementById("field-subtitle");
+  if (sub) sub.textContent = `FIELD ${love.currentField + 1}: ${FIELDS[love.currentField].name.toUpperCase()}`;
 }
 
 function updateHud(): void {
@@ -548,10 +721,42 @@ function draw(): void {
     if (champion.speed > 15) emitDust(champion.x, champion.y, champion.heading);
   }
 
-  // Screen-space AgTech Cockpit HUD Widgets
+  // Screen-space AgTech Cockpit HUD Widgets. The 900px bitmap is shrunk to fit narrow
+  // screens, so scale the widgets back up (up to 1.9x) to keep their text legible.
+  const cssW = canvas.getBoundingClientRect().width || canvas.width;
+  const k = Math.max(1, Math.min(1.9, 560 / cssW));
+  ctx.save();
+  ctx.scale(k, k);
+  const vw = canvas.width / k;
   drawCockpitTelemetry(ctx, 14, 14, 180, 84, champion, physics, track);
-  drawFitnessSparkline(ctx, canvas.width - 200, 14, 186, 68, population.fitnessHistory);
-  drawWeightHeatmap(ctx, canvas.width - 120, 94, 106, 88, population.bestEverGenome);
+  drawFitnessSparkline(ctx, vw - 200, 14, 186, 68, population.fitnessHistory);
+  drawWeightHeatmap(ctx, vw - 120, 94, 106, 88, population.bestEverGenome);
+  ctx.restore();
+}
+
+// Replays `seconds` of away time headlessly (same code path as a reload after being offline).
+async function catchUp(seconds: number): Promise<void> {
+  paused = true;
+  const capped = Math.min(seconds, 600); // a tab left backgrounded is capped at 10 min; closing it uses the 10 h offline cap
+  showOfflineOverlay(true);
+  updateOfflineOverlay(0, capped);
+  meta.rewardedGenerations = await runOfflineReplay({
+    pop: population,
+    track,
+    physics,
+    netCfg,
+    popCfg,
+    economy: meta.economy,
+    prestigeMultiplier: currencyMultiplierFor(meta.permanent),
+    upgradeLevels: meta.upgrades,
+    baseMutationMagnitude: basePopCfg.mutationMagnitude,
+    rewardedGenerations: meta.rewardedGenerations,
+    totalSeconds: capped,
+    onProgress: updateOfflineOverlay,
+  });
+  showOfflineOverlay(false);
+  lastSimTime = performance.now();
+  paused = false;
 }
 
 function showOfflineOverlay(show: boolean): void {
@@ -597,6 +802,20 @@ async function init(): Promise<void> {
     population = createPopulation(track, netCfg, popCfg);
   }
 
+  // Migration: an older save that already reached the end of the field earns a one-star clear.
+  if (saved && !loadLove() && population.bestEverFitness >= track.totalLength - 1) {
+    const def = FIELDS[love.currentField];
+    recordClear(love, def.id, Number.MAX_SAFE_INTEGER, def.par3, def.par2);
+  }
+  if (population.bestEverFitness >= track.totalLength - 1) clearedPopulation = population; // already cleared: stay quiet
+  lastGeneration = population.generation;
+  lastRecordDistance = population.bestEverFitness;
+  lastAnnouncedRow = rowIndexAtArc(track, population.bestEverFitness);
+  runAchievementCheck();
+  saveLove(love);
+  updateFieldLabels();
+  setTitleStats(love, population.generation);
+
   setupEventListeners();
   buildShop();
   updateHud();
@@ -604,10 +823,16 @@ async function init(): Promise<void> {
   setInterval(simTick, 33);
   requestAnimationFrame(renderLoop);
   setInterval(() => {
-    if (!saveSuspended) saveGame(meta, population);
+    if (!saveSuspended) {
+      saveGame(meta, population);
+      saveLove(love);
+    }
   }, 15000);
   window.addEventListener("beforeunload", () => {
-    if (!saveSuspended) saveGame(meta, population);
+    if (!saveSuspended) {
+      saveGame(meta, population);
+      saveLove(love);
+    }
   });
 }
 

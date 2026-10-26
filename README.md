@@ -8,8 +8,7 @@ the headland and avoid hazards. Each generation keeps the best driver and
 mutates it. There is no gradient descent and no training data. You spend credits
 on upgrades, watch the best driver, or take the wheel yourself.
 
-State: playable. Play it in the browser at
-[austin-c.itch.io/ab-line-evolve](https://austin-c.itch.io/ab-line-evolve).
+State: playable locally with the steps below. A hosted build is being refreshed, so there is no play link here yet.
 
 ## Run it
 

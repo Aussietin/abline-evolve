@@ -51,8 +51,8 @@ export const FIELDS: FieldDef[] = [
       ),
   },
   {
-    id: "rangeview-block",
-    name: "Rangeview Block",
+    id: "bog-block",
+    name: "Bog Block",
     blurb: "6 tight rows and lots of bog holes. Speed alone will not save you.",
     par3: 200,
     par2: 520,
@@ -60,15 +60,15 @@ export const FIELDS: FieldDef[] = [
     build: () =>
       buildBoustrophedonField(
         {
-          id: "rangeview-block", rowCount: 6, rowLength: 760, rowSpacing: 72, startX: 60, startY: 90, turnSegments: 12,
+          id: "bog-block", rowCount: 6, rowLength: 760, rowSpacing: 72, startX: 60, startY: 90, turnSegments: 12,
           obstacleCfg: rough({ stumpCount: [4, 6], bogCount: [3, 5], bogRadius: [22, 34], washoutCount: [1, 2] }),
         },
         56
       ),
   },
   {
-    id: "marwood-mega",
-    name: "Marwood Mega-Block",
+    id: "boss-paddock",
+    name: "Boss Paddock",
     blurb: "8 skinny rows, hazards everywhere. The boss paddock.",
     par3: 320,
     par2: 800,
@@ -76,7 +76,7 @@ export const FIELDS: FieldDef[] = [
     build: () =>
       buildBoustrophedonField(
         {
-          id: "marwood-mega", rowCount: 8, rowLength: 800, rowSpacing: 64, startX: 50, startY: 70, turnSegments: 12,
+          id: "boss-paddock", rowCount: 8, rowLength: 800, rowSpacing: 64, startX: 50, startY: 70, turnSegments: 12,
           obstacleCfg: rough({ stumpCount: [5, 8], bogCount: [3, 5], washoutCount: [2, 3], washoutLength: [50, 100] }),
         },
         50

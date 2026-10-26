@@ -1,4 +1,4 @@
-// Top-down precision agriculture tractor sprite.
+// Top-down tractor sprite.
 // Renders realistic agricultural proportions: long chassis hood, rear cab with glass reflection,
 // GPS guidance receiver dome, rear hitch with cultivator implement, and front wheels that
 // articulate with steering angle.
@@ -26,7 +26,7 @@ export function drawTractor(
   let gpsDomeColor = "#e0e0e0";
 
   if (isBest) {
-    bodyColor = "#44a627"; // Vibrant Precision Ag Green
+    bodyColor = "#44a627"; // vibrant green
     hoodColor = "#36881e";
     cabColor = "#52c230";
     glassColor = "rgba(25, 45, 55, 0.9)";

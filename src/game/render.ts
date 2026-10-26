@@ -525,7 +525,7 @@ function drawHeadlandGates(ctx: CanvasRenderingContext2D, track: Track): void {
 }
 
 function drawAbLine(ctx: CanvasRenderingContext2D, track: Track): void {
-  // Glowing high-precision AB GPS guidance line
+  // Glowing guidance line
   ctx.save();
   ctx.shadowColor = "rgba(255, 235, 60, 0.85)";
   ctx.shadowBlur = 8;
